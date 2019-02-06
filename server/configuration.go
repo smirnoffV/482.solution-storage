@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/caarlos0/env"
+	"net"
 )
 
 func NewConfiguration() Configuration {
@@ -15,6 +16,17 @@ func NewConfiguration() Configuration {
 }
 
 type Configuration struct {
-	ServiceHost string `env:"SERVICE_HOST,required"`
-	ServicePort string `env:"SERVICE_PORT,required"`
+	ServiceHost           string `env:"SERVICE_HOST,required"`
+	ServicePort           string `env:"SERVICE_PORT,required"`
+	ParentNodeServiceHost string `env:"PARENT_NODE_SERVICE_HOST,required"`
+	ParentNodeServicePort string `env:"PARENT_NODE_SERVICE_PORT,required"`
+}
+
+func (c Configuration) IsParentNodeAddressSet() bool {
+	return c.GetParentNodeAddress() != ":"
+}
+
+func (c Configuration) GetParentNodeAddress() string {
+	address := net.JoinHostPort(c.ParentNodeServiceHost, c.ParentNodeServicePort)
+	return address
 }

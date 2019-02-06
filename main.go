@@ -9,6 +9,14 @@ func main() {
 
 	var err error
 
+	err = c.Invoke(func(subscriber server.Subscriber) {
+		go subscriber.Subscribe()
+	})
+
+	if err != nil {
+		panic(err)
+	}
+
 	err = c.Invoke(func(handler server.Handler) {
 		handler.Handle()
 	})

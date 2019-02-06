@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
+	"os"
 	"strings"
 )
 
@@ -19,6 +21,8 @@ type Api interface {
 	Get(string) (*bytes.Buffer, error)
 	Set(string) (*bytes.Buffer, error)
 	GetAll() (*bytes.Buffer, error)
+	BuildRecoverResponse() (*bytes.Buffer, error)
+	Recover(string)
 }
 
 type HttpApi struct {
@@ -102,6 +106,32 @@ func (a *HttpApi) GetAll() (*bytes.Buffer, error) {
 	}
 
 	return bytes.NewBuffer(respBytes), nil
+}
+
+func (a *HttpApi) BuildRecoverResponse() (*bytes.Buffer, error) {
+	resp, err := a.GetAll()
+	if err != nil {
+		return nil, errors.New("error getting data from storage")
+	}
+
+	respStr := fmt.Sprintf("%s||%s", RECOVERPrefix, resp.String())
+
+	return bytes.NewBufferString(respStr), nil
+}
+
+func (a *HttpApi) Recover(cmd string) {
+	var data []*Response
+	buf := bytes.NewBufferString(cmd)
+	if err := json.NewDecoder(buf).Decode(&data); err != nil {
+		panic(err)
+	}
+
+	for _, item := range data {
+		if err := a.StorageRepository.Set(item.Key, item.Value); err != nil {
+			log.Println("error restoring form parent node")
+			os.Exit(1)
+		}
+	}
 }
 
 type Request struct {

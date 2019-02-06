@@ -35,7 +35,19 @@ func NewContainer() *dig.Container {
 		panic(err)
 	}
 
-	if err := c.Provide(NewTcpRequestServer, dig.Name("request-server")); err != nil {
+	if err := c.Provide(NewTcpRequestServer); err != nil {
+		panic(err)
+	}
+
+	if err := c.Provide(NewCommandsChanel); err != nil {
+		panic(err)
+	}
+
+	if err := c.Provide(NewBroadcaster); err != nil {
+		panic(err)
+	}
+
+	if err := c.Provide(NewSubscriber); err != nil {
 		panic(err)
 	}
 
@@ -51,4 +63,8 @@ func NewTcpRequestServer(configuration Configuration) (net.Listener, error) {
 	}
 
 	return ln, nil
+}
+
+func NewCommandsChanel() chan string {
+	return make(chan string, 500)
 }

@@ -5,38 +5,45 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"go.uber.org/dig"
+	"fmt"
 	"log"
 	"net"
 	"strings"
 )
 
-const (
-	GETPrefix    = "GET"
-	SETPrefix    = "SET"
-	GETALLPrefix = "GETALL"
+var (
+	WrongParamsFormatErr = errors.New("wrong params format")
 )
 
-func NewHandler(deps TCPHandlerDependencies) Handler {
+const (
+	GETPrefix     = "GET"
+	SETPrefix     = "SET"
+	GETALLPrefix  = "GETALL"
+	IAmChild      = "I_AM_CHILD"
+	RECOVERPrefix = "RECOVER"
+)
+
+func NewHandler(api Api, listener net.Listener, broadcaster Broadcaster, commandsChan chan string) Handler {
 	return &TCPHandler{
-		deps,
+		Api:          api,
+		TcpListener:  listener,
+		Broadcaster:  broadcaster,
+		CommandsChan: commandsChan,
 	}
 }
 
 type Handler interface {
 	Handle() error
 	HandleConn(net.Conn)
-}
-
-type TCPHandlerDependencies struct {
-	dig.In
-
-	Api         Api
-	TcpListener net.Listener `name:"request-server"`
+	ProcessCommand(cmd string, conn net.Conn)
 }
 
 type TCPHandler struct {
-	TCPHandlerDependencies
+	Api         Api
+	TcpListener net.Listener
+	Broadcaster Broadcaster
+
+	CommandsChan chan string
 }
 
 func (h *TCPHandler) Handle() error {
@@ -56,46 +63,51 @@ func (h *TCPHandler) Handle() error {
 func (h *TCPHandler) HandleConn(conn net.Conn) {
 	defer conn.Close()
 
-	log.Println("Goroutine has been started")
-
 	for {
 
-		message, err := bufio.NewReader(conn).ReadString('\n')
-
+		cmd, err := bufio.NewReader(conn).ReadString('\n')
 		if err != nil {
 			log.Print("client has been disconnected")
 			break
 		}
 
-		request := NewRawRequest(message)
-
-		var response *bytes.Buffer
-
-		switch {
-		case request.Method == SETPrefix && !request.IsEmptyBody():
-			response, err = h.Api.Set(request.Body)
-		case request.Method == GETPrefix && !request.IsEmptyBody():
-			response, err = h.Api.Get(request.Body)
-		case request.Method == GETALLPrefix:
-			response, err = h.Api.GetAll()
-		default:
-			err = errors.New("wrong params format")
-		}
-
-		if err != nil {
-			sendErrorResponse(err, conn)
-			continue
-		}
-
-		response.WriteString("\n")
-
-		if _, err := response.WriteTo(conn); err != nil {
-			log.Println("error publishing response")
-		}
-
+		h.ProcessCommand(cmd, conn)
 	}
 
 	return
+}
+
+func (h *TCPHandler) ProcessCommand(cmd string, conn net.Conn) {
+	request := NewRawRequest(cmd)
+
+	var err error
+	response := new(bytes.Buffer)
+
+	switch {
+	case request.Method == SETPrefix && !request.IsEmptyBody():
+		response, err = h.Api.Set(request.Body)
+		h.Broadcaster.Broadcast(request.BuildCmd())
+	case request.Method == GETPrefix && !request.IsEmptyBody():
+		response, err = h.Api.Get(request.Body)
+	case request.Method == IAmChild:
+		h.Broadcaster.AddChildConnection(conn)
+		response, err = h.Api.BuildRecoverResponse()
+	case request.Method == RECOVERPrefix && !request.IsEmptyBody():
+		h.Api.Recover(request.Body)
+	default:
+		err = WrongParamsFormatErr
+	}
+
+	if err != nil {
+		sendErrorResponse(err, conn)
+		return
+	}
+
+	response.WriteString("\n")
+
+	if _, err := response.WriteTo(conn); err != nil {
+		log.Println("error publishing response")
+	}
 }
 
 func sendErrorResponse(err error, conn net.Conn) {
@@ -114,7 +126,10 @@ func sendErrorResponse(err error, conn net.Conn) {
 }
 
 func NewRawRequest(message string) RawRequest {
-	parted := strings.Split(strings.TrimSuffix(message, "\r\n"), "||")
+	message = strings.Replace(message, "\r", "", -1)
+	message = strings.Replace(message, "\n", "", -1)
+
+	parted := strings.Split(message, "||")
 
 	request := RawRequest{
 		Method: parted[0],
@@ -130,6 +145,10 @@ func NewRawRequest(message string) RawRequest {
 type RawRequest struct {
 	Method string
 	Body   string
+}
+
+func (r RawRequest) BuildCmd() string {
+	return fmt.Sprintf("%s||%s\n", r.Method, r.Body)
 }
 
 func (r RawRequest) IsEmptyBody() bool {
