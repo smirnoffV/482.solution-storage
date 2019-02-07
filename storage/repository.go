@@ -32,8 +32,8 @@ func (r *MemoryStorageRepository) Get(key string) (string, error) {
 }
 
 func (r *MemoryStorageRepository) Set(key string, value string) error {
-	r.Storage.RLock()
-	defer r.Storage.RUnlock()
+	r.Storage.Lock()
+	defer r.Storage.Unlock()
 	r.Storage.Data[key] = value
 	return nil
 }

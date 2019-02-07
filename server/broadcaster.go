@@ -67,11 +67,3 @@ func (b *TCPBroadcaster) RemoveParentConnection() {
 	b.parentConnection = nil
 	log.Println(fmt.Sprintf("parent node has been disconnected"))
 }
-
-func (b *TCPBroadcaster) HasChildNodes() bool {
-
-}
-
-func (b *TCPBroadcaster) HasParentNodes() {
-
-}
